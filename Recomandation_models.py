@@ -115,8 +115,6 @@ def loss_graph(tr_loss,n_epochs):
 # nel caso non riuscisse e dovessimo tornare all'imparare le relazioni spaziali questi 2 modelli sono buoni
 class C_AE(nn.Module):
     def __init__(self,k):
-<<<<<<< HEAD
-
         super(C_AE, self).__init__()
         self.out_len1 = math.floor((k - 20) / 20) + 1
         self.out_len2 = math.floor((self.out_len1 - 10) / 10) + 1
