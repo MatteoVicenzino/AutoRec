@@ -16,7 +16,7 @@ class F_AE(nn.Module):
         super(F_AE, self).__init__()
         self.encoder = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(k,100),
+            nn.Linear(k,1000),
             nn.ReLU(),
             nn.Linear(1000,500),
             nn.ReLU(),
@@ -40,10 +40,12 @@ class F_AE(nn.Module):
             nn.Linear(500,1000),
             nn.ReLU(),
             nn.Linear(1000,k),
-            nn.Linear(100,k),
             nn.Unflatten(1,(2,k))
         )
-        self.value_sets = [ids,list(range(0,6))]
+        self.value_sets = [
+            torch.tensor(ids).float(),             # tensore per la prima colonna
+            torch.tensor(list(range(0,6))).float() # tensore per la seconda colonna
+        ]
 
     def normalize_columns(self,tensor):
             tensor = tensor.float()
@@ -55,30 +57,33 @@ class F_AE(nn.Module):
         tensor = tensor.float()
         return (tensor * std) + mean
 
-    def force_columns_to_values(self,tensor, value_sets):
+    def force_columns_to_values(self, tensor, value_sets):
         tensor = tensor.float()
         output = []
         for col_idx in range(tensor.shape[1]):
-            col = tensor[:, col_idx].unsqueeze(1)  
-            value_set = torch.tensor(value_sets[col_idx]).float().unsqueeze(0)  
-            distances = torch.abs(col - value_set)  
+            col = tensor[:, col_idx].unsqueeze(1)
+            value_set = value_sets[col_idx].unsqueeze(0)  
+            distances = torch.abs(col - value_set)
             indices = torch.argmin(distances, dim=1)
-            forced_col = value_set.squeeze(0)[indices] 
-            output.append(forced_col.unsqueeze(1))  
-        return torch.cat(output, dim=1)  
+            forced_col = value_set.squeeze(0)[indices]
+            output.append(forced_col.unsqueeze(1))
+        return torch.cat(output, dim=1)
+
 
 
     def forward(self,x):
+        device = x.device
+        if not hasattr(self, 'value_sets_device'):
+            self.value_sets_device = [vs.to(device) for vs in self.value_sets]
         x, mean, std = self.normalize_columns(x)
         z = self.encoder(x)
         recon = self.decoder(z)
-        final = self.force_values(recon)
-        final = self.denormalize_columns(final, mean, std)
+        final = self.denormalize_columns(recon, mean, std)
         final = self.force_columns_to_values(final, self.value_sets)
         return final,z
     
 
-def train(model, N_Epochs, dataloader, criterion, optimazer):
+def train(model, N_Epochs, dataloader, criterion, optimizer):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
     losses = []
@@ -93,9 +98,9 @@ def train(model, N_Epochs, dataloader, criterion, optimazer):
 
             recon,z = model(us)
             loss = criterion(recon,us)
-            optimazer.zero_grad()
+            optimizer.zero_grad()
             loss.backward()
-            optimazer.step()
+            optimizer.step()
             Tr_current_loss += loss.item()
             
         losses.append(Tr_current_loss/i)
@@ -110,6 +115,149 @@ def loss_graph(tr_loss,n_epochs):
     plt.title('Loss over Epochs')
     plt.legend()
     plt.show()
+
+
+def string_to_tensor(stringhe, s, max_len):
+    vocab = sorted(list(set("".join(stringhe))))  # tutti i caratteri unici
+    char2idx = {ch: i for i, ch in enumerate(vocab)}
+    idx2char = {i: ch for ch, i in char2idx.items()}
+    vocab_size = len(vocab)
+    def string_to_indices(s, max_len):
+        indices = [char2idx[c] for c in s]
+        return indices + [0] * (max_len - len(indices))
+
+    max_len = max(len(s) for s in stringhe)
+    X = torch.tensor([string_to_indices(s, max_len) for s in stringhe])
+
+import torch
+import torch.nn as nn
+
+class StringAE(nn.Module):
+    def __init__(self, vocab_size, emb_dim, num_dim, pair_emb_dim, hidden_dim, k, string_len):
+        super(StringAE, self).__init__()
+        self.k = k
+        self.string_len = string_len
+        self.vocab_size = vocab_size
+
+        # string embedding
+        self.string_embedding = nn.Embedding(vocab_size, emb_dim)
+        self.encoder_str = nn.LSTM(emb_dim, emb_dim, batch_first=True)
+
+        # number embedding (correzione: interi nelle dimensioni)
+        self.encoder_num = nn.Sequential(
+            nn.Linear(1, num_dim // 2),
+            nn.ReLU(),
+            nn.Linear(num_dim // 2, num_dim)
+        )
+        
+        # embedding the combination
+        self.pair_encoder = nn.Linear(num_dim + emb_dim, pair_emb_dim)
+        
+        # encoder sequence con conv1d
+        self.encoder_seq = nn.Sequential(
+            nn.Conv1d(in_channels=pair_emb_dim, out_channels=hidden_dim, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv1d(in_channels=hidden_dim, out_channels=hidden_dim, kernel_size=3, padding=1),
+            nn.ReLU()
+        )
+
+        # decoding combination con ConvTranspose1d
+        self.decoder_seq = nn.Sequential(
+            nn.ConvTranspose1d(in_channels=hidden_dim, out_channels=hidden_dim, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.ConvTranspose1d(in_channels=hidden_dim, out_channels=pair_emb_dim, kernel_size=3, padding=1),
+            nn.ReLU()
+        )
+        
+        # decoding numbers
+        self.decoder_num = nn.Sequential(
+            nn.Linear(pair_emb_dim, num_dim),
+            nn.ReLU(),
+            nn.Linear(num_dim, num_dim // 2),
+            nn.ReLU(),
+            nn.Linear(num_dim // 2, 1)
+        )
+
+        # decoding strings
+        self.decoder_str_lstm = nn.LSTM(pair_emb_dim, hidden_dim, batch_first=True)
+        self.decoder_str_fc = nn.Linear(hidden_dim, vocab_size)
+
+    def forward(self, num_inputs, str_inputs):
+        B, K, L = str_inputs.shape
+
+        # string processing
+        str_inputs_flat = str_inputs.view(B * K, L)
+        emb_str = self.string_embedding(str_inputs_flat)  
+        _, (h_str, _) = self.encoder_str(emb_str)        
+        h_str = h_str[-1]                                 
+    
+
+        # number processing
+        num_inputs_flat = num_inputs.view(B * K, 1)
+        h_num = self.encoder_num(num_inputs_flat)         
+
+        # pair processing
+        pair = torch.cat([h_num, h_str], dim=1)           
+        pair = self.pair_encoder(pair)                     
+        pair = pair.view(B, K, -1)                         
+
+        # sequence coding conv1d expects (B, C, L)
+        pair = pair.permute(0, 2, 1)                       
+        z = self.encoder_seq(pair)                          
+        z = z.permute(0, 2, 1)                             
+
+        # decoding sequence convtranspose1d
+        dec_seq = z.permute(0, 2, 1)                       
+        dec_seq = self.decoder_seq(dec_seq)                
+        dec_seq = dec_seq.permute(0, 2, 1)                
+
+        # decoding number
+        out_num = self.decoder_num(dec_seq)                
+        dec_str_lstm_out, _ = self.decoder_str_lstm(dec_seq)  
+        out_str = self.decoder_str_fc(dec_str_lstm_out)        
+        out_str = out_str.unsqueeze(2).repeat(1, 1, self.string_len, 1) 
+
+        return out_num, out_str
+
+def train(model, dataloader, optimizer, criterion_num, criterion_str, device, N_epochs):
+    model.to(device)
+    losses = []
+
+    for epoch in range(N_epochs):
+        model.train()
+        running_loss = 0
+
+        for batch in dataloader:
+
+            batch = batch.to(device)
+
+            num_inputs = batch[..., 1]  
+            str_inputs = batch[..., 0]  
+            optimizer.zero_grad()
+            out_num, out_str = model(str_inputs, num_inputs)  
+
+            # Loss numeri
+            loss_num = criterion_num(out_num.squeeze(-1), num_inputs.float())
+
+            # Loss stringhe: usa CrossEntropy su dimensione vocab_size
+            B, K, L, V = out_str.shape
+            out_str_reshaped = out_str.view(B * K * L, V)               
+            target_str = str_inputs.view(B * K * L).long()              
+
+            loss_str = criterion_str(out_str_reshaped, target_str)
+
+            loss = loss_num + loss_str
+            loss.backward()
+            optimizer.step()
+
+            running_loss += loss.item()
+
+        avg_loss = running_loss / len(dataloader)
+        losses.append(avg_loss)
+        print(f"Epoch {epoch+1}/{N_epochs} - Loss: {avg_loss:.4f}")
+
+    return losses
+
 
         
 # nel caso non riuscisse e dovessimo tornare all'imparare le relazioni spaziali questi 2 modelli sono buoni
