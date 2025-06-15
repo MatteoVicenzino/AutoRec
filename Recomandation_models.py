@@ -11,24 +11,12 @@ import torch.nn.functional as F
 import torchvision 
 import torch.utils.data as data
 import torch.distributions as dist
-
-<<<<<<< HEAD
-#model definition
-class F_AE(nn.Module):
-    def __init__(self,k, h, ids):
-        super(F_AE, self).__init__()
-        self.encoder = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(k,1000),
-=======
-
 class F_AE(nn.Module):
     def __init__(self,k, ids):
         super(F_AE, self).__init__()
         self.encoder = nn.Sequential(
             nn.Flatten(),
             nn.Linear(k,100),
->>>>>>> origin/main
             nn.ReLU(),
             nn.Linear(1000,500),
             nn.ReLU(),
@@ -49,40 +37,25 @@ class F_AE(nn.Module):
             nn.ReLU(),
             nn.Linear(250,500),
             nn.ReLU(),
-<<<<<<< HEAD
             nn.Linear(500,1000),
             nn.ReLU(),
             nn.Linear(1000,k),
-=======
             nn.Linear(100,k),
->>>>>>> origin/main
             nn.Unflatten(1,(2,k))
         )
         self.value_sets = [ids,list(range(0,6))]
 
     def normalize_columns(self,tensor):
-<<<<<<< HEAD
-            #This function normilize the 2 colimns book_id and rating separatly. this is done to mantain a clear difference between the two parts
-=======
->>>>>>> origin/main
             tensor = tensor.float()
             mean = tensor.mean(dim=0, keepdim=True)  
             std = tensor.std(dim=0, keepdim=True)    
             return (tensor - mean) / std, mean, std
 
     def denormalize_columns(self,tensor, mean, std):
-<<<<<<< HEAD
-        # with this function we return from the normalization
-=======
->>>>>>> origin/main
         tensor = tensor.float()
         return (tensor * std) + mean
 
     def force_columns_to_values(self,tensor, value_sets):
-<<<<<<< HEAD
-        #this function is needed to remap the columns in the correct domains
-=======
->>>>>>> origin/main
         tensor = tensor.float()
         output = []
         for col_idx in range(tensor.shape[1]):
