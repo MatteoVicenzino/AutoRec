@@ -10,22 +10,12 @@ import torchvision
 import torch.utils.data as data
 import torch.distributions as dist
 
-def force_values(tensor):
-    value_set = [0,1,2,3,4,5]
-    min_val = min(value_set)
-    max_val = max(value_set)
-    tensor = torch.clamp(tensor, min_val, max_val)
-    tensor = tensor.unsqueeze(-1)  
-    value_set_tensor = torch.tensor(value_set, device=tensor.device).unsqueeze(0)  
-    distances = torch.abs(tensor - value_set_tensor)  
-    closest_indices = torch.argmin(distances, dim=-1) 
-    result = value_set_tensor.gather(-1, closest_indices.unsqueeze(-1)).squeeze(-1)
-    return result
 
 class F_AE(nn.Module):
-    def __init__(self,k):
+    def __init__(self,k, ids):
         super(F_AE, self).__init__()
         self.encoder = nn.Sequential(
+            nn.Flatten(),
             nn.Linear(k,100),
             nn.ReLU(),
             nn.Linear(100,50),
@@ -45,22 +35,43 @@ class F_AE(nn.Module):
             nn.ReLU(),
             nn.Linear(50,100),
             nn.ReLU(),
-            nn.Linear(100,k)
-
+            nn.Linear(100,k),
+            nn.Unflatten(1,(2,k))
         )
-        
+        self.value_sets = [ids,list(range(0,6))]
+
+    def normalize_columns(self,tensor):
+            tensor = tensor.float()
+            mean = tensor.mean(dim=0, keepdim=True)  
+            std = tensor.std(dim=0, keepdim=True)    
+            return (tensor - mean) / std, mean, std
+
+    def denormalize_columns(self,tensor, mean, std):
+        tensor = tensor.float()
+        return (tensor * std) + mean
+
+    def force_columns_to_values(self,tensor, value_sets):
+        tensor = tensor.float()
+        output = []
+        for col_idx in range(tensor.shape[1]):
+            col = tensor[:, col_idx].unsqueeze(1)  
+            value_set = torch.tensor(value_sets[col_idx]).float().unsqueeze(0)  
+            distances = torch.abs(col - value_set)  
+            indices = torch.argmin(distances, dim=1)
+            forced_col = value_set.squeeze(0)[indices] 
+            output.append(forced_col.unsqueeze(1))  
+        return torch.cat(output, dim=1)  
+
+
     def forward(self,x):
+        x, mean, std = self.normalize_columns(x)
         z = self.encoder(x)
         recon = self.decoder(z)
-        final = force_values(recon)
-        return final,x
+        final = self.force_values(recon)
+        final = self.denormalize_columns(final, mean, std)
+        final = self.force_columns_to_values(final, self.value_sets)
+        return final,z
     
-class C_AE(nn.Module):
-    def __init__(self,k):
-        super(C_AE, self).__init__()
-        self.encoder = nn.Sequential(
-        nn.Conv1d()
-        )
 
 def train(model, N_Epochs, dataloader, criterion, optimazer):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -96,3 +107,44 @@ def Vae_graphs(tr_loss,n_epochs):
     plt.show()
 
         
+# nel caso non riuscisse e dovessimo tornare all'imparare le relazioni spaziali questi 2 modelli sono buoni
+class C_AE(nn.Module):
+    def __init__(self,k):
+        super(C_AE, self).__init__()
+        self.encoder = nn.Sequential(
+            nn.Conv1d(in_channels = 1, out_channels = 5, kernel_size = 20, stride = 20),
+            nn.ReLU(),
+            
+        )
+
+class F_AE2(nn.Module):
+    def __init__(self,k):
+        super(F_AE2, self).__init__()
+        self.encoder = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(k,100),
+            nn.ReLU(),
+            nn.Linear(100,50),
+            nn.ReLU(),
+            nn.Linear(50,25),
+            nn.ReLU(),
+            nn.Linear(25,10),
+            nn.ReLU(),
+            nn.Linear(10,1)
+        )
+        self.decoder = nn.Sequential(
+            nn.Linear(1,10),
+            nn.ReLU(),
+            nn.Linear(10,25),
+            nn.ReLU(),
+            nn.Linear(25,50),
+            nn.ReLU(),
+            nn.Linear(50,100),
+            nn.ReLU(),
+            nn.Linear(100,k),
+            nn.Unflatten(1,(2,k))
+        )
+    def forward(self,x):
+        z = self.encoder(x)
+        final = self.decoder(z)
+        return final,z
