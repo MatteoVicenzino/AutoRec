@@ -11,9 +11,9 @@ import torch.nn.functional as F
 import torchvision 
 import torch.utils.data as data
 import torch.distributions as dist
-class F_AE(nn.Module):
+class FAE(nn.Module):
     def __init__(self,k, ids):
-        super(F_AE, self).__init__()
+        super(FAE, self).__init__()
         self.encoder = nn.Sequential(
             nn.Flatten(),
             nn.Linear(k,1000),
@@ -83,7 +83,7 @@ class F_AE(nn.Module):
         return final,z
     
 
-def train(model, N_Epochs, dataloader, criterion, optimizer):
+def train_FAE(model, N_Epochs, dataloader, criterion, optimizer):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
     losses = []
@@ -219,7 +219,7 @@ class StringAE(nn.Module):
 
         return out_num, out_str
 
-def train(model, dataloader, optimizer, criterion_num, criterion_str, device, N_epochs):
+def train_StringAE(model, dataloader, optimizer, criterion_num, criterion_str, device, N_epochs):
     model.to(device)
     losses = []
 
