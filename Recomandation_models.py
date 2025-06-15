@@ -167,14 +167,6 @@ class C_AE(nn.Module):
             nn.ReLU(),
             nn.ConvTranspose1d(in_channels = 5, out_channels = 1, kernel_size = 20, stride = 20),
             nn.Sigmoid()
-=======
-        super(C_AE, self).__init__()
-        self.encoder = nn.Sequential(
-            nn.Conv1d(in_channels = 1, out_channels = 5, kernel_size = 20, stride = 20),
-            nn.ReLU(),
-            
->>>>>>> origin/main
-        )
 
 class F_AE2(nn.Module):
     def __init__(self,k):

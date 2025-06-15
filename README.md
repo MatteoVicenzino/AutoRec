@@ -14,8 +14,4 @@ This will be done by doing a clustering on the books using some features. Then, 
 This way having N << #total of books we can solve booth the problems. Adding a book, until a certin number of addition, can simply be solved by putting new books in the most similar cluster.  
 
 2) AUTOENCODER:
-<<<<<<< HEAD
 The Autoencoder need to learn the spatial relationship between rating values, but becouse we have the filtering part now the spatiality is not mantained and we cant simply train it on the ratings. So we map the spatiality information in a position using as data a 2d vector of ratings and books_id. The problem pass from learning spatial relationship to learn numerical relationship between the dimension of the vectors and within them. To do this and to mantain the data structure it's good to normalize booth the dimension separatly and then force the number to be between the id's and ratings values; this way the model just had to learn how to associate values to book_id's insted to learn also the boundaries of the two parts.
-=======
-The Autoencoder need to learn the spatial relationship between rating values, but becouse we have the filtering part now the spatiality is not mantained and we cant simply train it on the ratings. So we map the spatiality information in a position using as data a 2d vector of ratings and books_id. The problem pass from learning spatial relationship to learn numerical relationship between the dimension of the vectors and within them. To do this and to mantain the data structure it's good to normalize booth the dimension separatly and then force the number to be between the id's and ratings values; this way the model just had to learn how to associate values to book_id's.
->>>>>>> origin/main
