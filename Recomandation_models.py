@@ -332,3 +332,4 @@ class F_AE2(nn.Module):
     def forward(self,x):
         z = self.encoder(x)
         final = self.decoder(z)
+        return final
