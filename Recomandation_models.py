@@ -137,142 +137,11 @@ def string_to_tensor(stringhe, s, max_len):
     max_len = max(len(s) for s in stringhe)
     X = torch.tensor([string_to_indices(s, max_len) for s in stringhe])
 
-import torch
-import torch.nn as nn
-
-#This model is beeing done with AI support to understand wich are the correct dimension during the process
-class StringAE(nn.Module):
-    def __init__(self, vocab_size, emb_dim, num_dim, pair_emb_dim, hidden_dim, k, string_len):
-        super(StringAE, self).__init__()
-        self.k = k
-        self.string_len = string_len
-        self.vocab_size = vocab_size
-
-        # string embedding
-        self.string_embedding = nn.Embedding(vocab_size, emb_dim)
-        self.encoder_str = nn.LSTM(emb_dim, emb_dim, batch_first=True)
-
-        # number embedding (correzione: interi nelle dimensioni)
-        self.encoder_num = nn.Sequential(
-            nn.Linear(1, num_dim // 2),
-            nn.ReLU(),
-            nn.Linear(num_dim // 2, num_dim)
-        )
-        
-        # embedding the combination
-        self.pair_encoder = nn.Linear(num_dim + emb_dim, pair_emb_dim)
-        
-        # encoder sequence con conv1d
-        self.encoder_seq = nn.Sequential(
-            nn.Conv1d(in_channels=pair_emb_dim, out_channels=hidden_dim, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv1d(in_channels=hidden_dim, out_channels=hidden_dim, kernel_size=3, padding=1),
-            nn.ReLU()
-        )
-
-        # decoding combination con ConvTranspose1d
-        self.decoder_seq = nn.Sequential(
-            nn.ConvTranspose1d(in_channels=hidden_dim, out_channels=hidden_dim, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.ConvTranspose1d(in_channels=hidden_dim, out_channels=pair_emb_dim, kernel_size=3, padding=1),
-            nn.ReLU()
-        )
-        
-        # decoding numbers
-        self.decoder_num = nn.Sequential(
-            nn.Linear(pair_emb_dim, num_dim),
-            nn.ReLU(),
-            nn.Linear(num_dim, num_dim // 2),
-            nn.ReLU(),
-            nn.Linear(num_dim // 2, 1)
-        )
-
-        # decoding strings
-        self.decoder_str_lstm = nn.LSTM(pair_emb_dim, hidden_dim, batch_first=True)
-        self.decoder_str_fc = nn.Linear(hidden_dim, vocab_size)
-
-    def forward(self, num_inputs, str_inputs):
-        B, K, L = str_inputs.shape
-
-        # string processing
-        str_inputs_flat = str_inputs.view(B * K, L)
-        emb_str = self.string_embedding(str_inputs_flat)  
-        _, (h_str, _) = self.encoder_str(emb_str)        
-        h_str = h_str[-1]                                 
-    
-
-        # number processing
-        num_inputs_flat = num_inputs.view(B * K, 1)
-        h_num = self.encoder_num(num_inputs_flat)         
-
-        # pair processing
-        pair = torch.cat([h_num, h_str], dim=1)           
-        pair = self.pair_encoder(pair)                     
-        pair = pair.view(B, K, -1)                         
-
-        # sequence coding conv1d expects (B, C, L)
-        pair = pair.permute(0, 2, 1)                       
-        z = self.encoder_seq(pair)                          
-        z = z.permute(0, 2, 1)                             
-
-        # decoding sequence convtranspose1d
-        dec_seq = z.permute(0, 2, 1)                       
-        dec_seq = self.decoder_seq(dec_seq)                
-        dec_seq = dec_seq.permute(0, 2, 1)                
-
-        # decoding number
-        out_num = self.decoder_num(dec_seq)                
-        dec_str_lstm_out, _ = self.decoder_str_lstm(dec_seq)  
-        out_str = self.decoder_str_fc(dec_str_lstm_out)        
-        out_str = out_str.unsqueeze(2).repeat(1, 1, self.string_len, 1) 
-
-        return out_num, out_str
-
-def train_StringAE(model, dataloader, optimizer, criterion_num, criterion_str, device, N_epochs):
-    model.to(device)
-    losses = []
-
-    for epoch in range(N_epochs):
-        model.train()
-        running_loss = 0
-
-        for batch in dataloader:
-
-            batch = batch.to(device)
-
-            num_inputs = batch[..., 1]  
-            str_inputs = batch[..., 0]  
-            optimizer.zero_grad()
-            out_num, out_str = model(str_inputs, num_inputs)  
-
-            # Loss numeri
-            loss_num = criterion_num(out_num.squeeze(-1), num_inputs.float())
-
-            # Loss stringhe: usa CrossEntropy su dimensione vocab_size
-            B, K, L, V = out_str.shape
-            out_str_reshaped = out_str.view(B * K * L, V)               
-            target_str = str_inputs.view(B * K * L).long()              
-
-            loss_str = criterion_str(out_str_reshaped, target_str)
-
-            loss = loss_num + loss_str
-            loss.backward()
-            optimizer.step()
-
-            running_loss += loss.item()
-
-        avg_loss = running_loss / len(dataloader)
-        losses.append(avg_loss)
-        print(f"Epoch {epoch+1}/{N_epochs} - Loss: {avg_loss:.4f}")
-
-    return losses
-
-
         
 # nel caso non riuscisse e dovessimo tornare all'imparare le relazioni spaziali questi 2 modelli sono buoni
-class C_AE(nn.Module):
+class Spatial_C_AE(nn.Module):
     def __init__(self,k):
-        super(C_AE, self).__init__()
+        super(Spatial_C_AE, self).__init__()
         self.out_len1 = math.floor((k - 20) / 20) + 1
         self.out_len2 = math.floor((self.out_len1 - 10) / 10) + 1
         self.encoder = nn.Sequential(
@@ -299,37 +168,82 @@ class C_AE(nn.Module):
     def forward(self,x):
         z = self.encoder(x)
         recon = self.decoder(z)
-        return recon,z
+        return recon
 
-class F_AE2(nn.Module):
+class Spatial_F_AE(nn.Module):
     def __init__(self,k):
-        super(F_AE2, self).__init__()
+        super(Spatial_F_AE, self).__init__()
         self.encoder = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(k,100),
+            nn.Linear(k,500),
             nn.ReLU(),
-            nn.Linear(100,50),
+            nn.Linear(500,250),
             nn.ReLU(),
-            nn.Linear(50,25),
+            nn.Linear(250,125),
             nn.ReLU(),
-            nn.Linear(25,10),
+            nn.Linear(125,50),
             nn.ReLU(),
-            nn.Linear(10,1)
+            nn.Linear(50,25)
         )
         self.decoder = nn.Sequential(
-            nn.Linear(1,10),
-            nn.ReLU(),
-            nn.Linear(10,25),
-            nn.ReLU(),
             nn.Linear(25,50),
             nn.ReLU(),
-            nn.Linear(50,100),
+            nn.Linear(50,125),
             nn.ReLU(),
-            nn.Linear(100,k),
+            nn.Linear(125,250),
+            nn.ReLU(),
+            nn.Linear(250,500),
+            nn.ReLU(),
+            nn.Linear(500,k),
             nn.Sigmoid(),
-            nn.Unflatten(1,(2,k))
         )
     def forward(self,x):
         z = self.encoder(x)
         final = self.decoder(z)
         return final
+    
+class Spatial_LSTM_AE(nn.Module):
+    def __init__(self,input_size=1, hidden_size=64, latent_size=32, num_layers=10):
+        super(Spatial_LSTM_AE, self).__init__()
+        self.encoder_lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size, num_layers=num_layers, batch_first=True)
+        self.fc_enc = nn.Linear(hidden_size, latent_size)
+        self.fc_dec = nn.Linear(latent_size, hidden_size)
+        self.decoder_lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size, num_layers=num_layers, batch_first=True)
+        self.output_layer = nn.Linear(hidden_size, input_size)
+    
+    def forward(self, x):
+        batch_size, seq_len, _ = x.size()
+        _, (hn, _) = self.encoder_lstm(x)
+        h_last = hn[-1]
+        z = self.fc_enc(h_last)
+        h_dec = self.fc_dec(z)
+        h_dec = h_dec.unsqueeze(0).repeat(self.decoder_lstm.num_layers, 1, 1)
+        c_dec = self.fc_dec(z)       # fc_c è un altro Linear
+        c_dec = c_dec.unsqueeze(0).repeat(self.decoder_lstm.num_layers, 1, 1)
+        decoder_input = torch.zeros(batch_size, seq_len, 1).to(x.device)
+        decoder_output, _ = self.decoder_lstm(decoder_input, (h_dec, c_dec))
+        reconstructed = self.output_layer(decoder_output)  
+        return reconstructed
+
+def train_spatial(model, dataloader, criterion, optimizer, num_epochs, best_loss=float('inf')):
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    losses = []
+    model.to(device)
+    for epoch in range(num_epochs):
+        model.train()
+        running_loss = 0.0
+        for i, batch in enumerate(dataloader):
+            batch = batch.to(device)
+            recon, _ = model(batch)
+            loss = criterion(recon, batch)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            running_loss += loss.item()
+        losses.append(running_loss / (i + 1))
+        if running_loss < best_loss:
+            best_loss = running_loss
+            torch.save(model.state_dict(), 'best_model.pth')
+        print(f"Epoch {epoch+1}: Loss = {running_loss / (i + 1):.4f}")
+    return losses
+
+    
