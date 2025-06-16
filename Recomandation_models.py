@@ -1,7 +1,7 @@
 #HERE WE DEFINE THE MODELS AND THE TRAINING FUNTIONS
 import pandas as pd
 import numpy as np
-
+import tqdm
 import math
 from time import time
 import matplotlib.pyplot as plt
@@ -83,19 +83,21 @@ class FAE(nn.Module):
         return final,z
     
 
-def train_FAE(model, N_Epochs, dataloader, criterion, optimizer):
+def train_FAE(model, N_Epochs, dataloader, criterion, optimizer, scheduler = None):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
     losses = []
+    parameters = []
     start = time()
+    best_loss = float('inf')
 
     for epoch in range(N_Epochs):
         model.train()
         Tr_current_loss = 0
-
+        loop = tqdm(enumerate(dataloader), total=len(dataloader), desc=f"Epoch {epoch+1}/{N_Epochs}", leave=False)
         for i,us in enumerate(dataloader):
+            print(type(us))
             us = us.to(device)
-
             recon,z = model(us)
             loss = criterion(recon,us)
             optimizer.zero_grad()
@@ -105,8 +107,16 @@ def train_FAE(model, N_Epochs, dataloader, criterion, optimizer):
             
         losses.append(Tr_current_loss/i)
         print(f'Epoch: {epoch+1} | Loss: {Tr_current_loss/i:.4f} | Time: {time()-start:.2f}')
+        parameters.append(model.state_dict())
+        if best_loss > Tr_current_loss:
+            best_loss = Tr_current_loss
+            torch.save(model.state_dict(), 'best_model.pth')
+        
+        if scheduler is not None:
+            scheduler.step()
+
         start = time()
-    return losses,recon,z
+    return losses,parameters,recon,z
 
 def loss_graph(tr_loss,n_epochs):
     plt.plot(range(n_epochs),tr_loss,label='tr_loss', c='black')
@@ -132,6 +142,7 @@ def string_to_tensor(stringhe, s, max_len):
 import torch
 import torch.nn as nn
 
+#This model is beeing done with AI support to understand wich are the correct dimension during the process
 class StringAE(nn.Module):
     def __init__(self, vocab_size, emb_dim, num_dim, pair_emb_dim, hidden_dim, k, string_len):
         super(StringAE, self).__init__()
