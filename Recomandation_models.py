@@ -1,7 +1,6 @@
-#HERE WE DEFINE THE MODELS AND THE TRAINING FUNTIONS
+
 import pandas as pd
 import numpy as np
-import tqdm
 import math
 from time import time
 import matplotlib.pyplot as plt
@@ -16,7 +15,7 @@ class FAE(nn.Module):
         super(FAE, self).__init__()
         self.encoder = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(k,1000),
+            nn.Linear(k*2,1000),
             nn.ReLU(),
             nn.Linear(1000,500),
             nn.ReLU(),
@@ -39,39 +38,39 @@ class FAE(nn.Module):
             nn.ReLU(),
             nn.Linear(500,1000),
             nn.ReLU(),
-            nn.Linear(1000,k),
-            nn.Unflatten(1,(2,k))
+            nn.Linear(1000,k*2),
+            nn.Unflatten(1,(k,2))
         )
-        self.value_sets = [
-            torch.tensor(ids).float(),             # tensore per la prima colonna
-            torch.tensor(list(range(0,6))).float() # tensore per la seconda colonna
-        ]
+        self.value_sets = [torch.tensor(ids).float(),torch.tensor(list(range(0,6))).float() ]
 
-    def normalize_columns(self,tensor):
-            tensor = tensor.float()
-            mean = tensor.mean(dim=0, keepdim=True)  
-            std = tensor.std(dim=0, keepdim=True)    
-            return (tensor - mean) / std, mean, std
-
-    def denormalize_columns(self,tensor, mean, std):
+    def normalize_columns(self, tensor):
         tensor = tensor.float()
-        return (tensor * std) + mean
+        mean = tensor.mean(dim=0, keepdim=True)   
+        std = tensor.std(dim=0, keepdim=True) + 1e-8  
+        return (tensor - mean) / std, mean, std
+
+    def denormalize_columns(self, tensor, mean, std):
+        return tensor * std + mean
 
     def force_columns_to_values(self, tensor, value_sets):
         tensor = tensor.float()
         output = []
-        for col_idx in range(tensor.shape[1]):
-            col = tensor[:, col_idx].unsqueeze(1)
-            value_set = value_sets[col_idx].unsqueeze(0)  
-            distances = torch.abs(col - value_set)
-            indices = torch.argmin(distances, dim=1)
-            forced_col = value_set.squeeze(0)[indices]
-            output.append(forced_col.unsqueeze(1))
-        return torch.cat(output, dim=1)
+        for i in range(tensor.shape[2]):  
+            col = tensor[:, :, i]          
+            value_set = value_sets[i].to(tensor.device)  
+            col = col.unsqueeze(1)        
+            value_set = value_set.unsqueeze(0).unsqueeze(-1)  
+            distances = torch.abs(col - value_set)           
+            indices = torch.argmin(distances, dim=1)        
+            forced_col = value_set.squeeze(0)[indices]    
+            forced_col = forced_col.squeeze(-1)         
+            output.append(forced_col)                      
+        return torch.stack(output, dim=2)                  
 
 
 
-    def forward(self,x):
+
+    def forward(self,x, force_values=False):
         device = x.device
         if not hasattr(self, 'value_sets_device'):
             self.value_sets_device = [vs.to(device) for vs in self.value_sets]
@@ -79,7 +78,8 @@ class FAE(nn.Module):
         z = self.encoder(x)
         recon = self.decoder(z)
         final = self.denormalize_columns(recon, mean, std)
-        final = self.force_columns_to_values(final, self.value_sets)
+        if force_values:
+            final = self.force_columns_to_values(final, self.value_sets_device)
         return final,z
     
 
@@ -94,12 +94,10 @@ def train_FAE(model, N_Epochs, dataloader, criterion, optimizer, scheduler = Non
     for epoch in range(N_Epochs):
         model.train()
         Tr_current_loss = 0
-        loop = tqdm(enumerate(dataloader), total=len(dataloader), desc=f"Epoch {epoch+1}/{N_Epochs}", leave=False)
         for i,us in enumerate(dataloader):
-            print(type(us))
             us = us.to(device)
             recon,z = model(us)
-            loss = criterion(recon,us)
+            loss = criterion(model.value_sets,us, recon)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -334,4 +332,3 @@ class F_AE2(nn.Module):
     def forward(self,x):
         z = self.encoder(x)
         final = self.decoder(z)
-        return final,z
