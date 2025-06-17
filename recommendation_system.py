@@ -5,23 +5,61 @@ from collections import Counter
 
 
 class BookRecommendationSystem:
-
-    def __init__(self, model_path, ids, k=300, df_books=None):
-        self.k = k
-        self.ids = ids
+    def __init__(self, model_path, book_ids, k=None, df_books=None):
+        self.book_ids = book_ids
+        self.k = k if k is not None else len(book_ids)
         self.df_books = df_books
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
         from Recomandation_models import FAE
 
-        self.model = FAE(k=k, ids=ids)
+        self.model = FAE(k=self.k, ids=book_ids)
         self.model.load_state_dict(torch.load(model_path, map_location=self.device))
         self.model.to(self.device)
         self.model.eval()
 
+        self.book_to_idx = {book_id: idx for idx, book_id in enumerate(book_ids)}
+        self.idx_to_book = {idx: book_id for idx, book_id in enumerate(book_ids)}
+
         print(f"✅ Modello FAE caricato su {self.device}")
-        print(f"✅ Vettore utente dimensione: {k}")
-        print(f"✅ Book IDs nel modello: {len(ids)}")
+        print(f"✅ Vettore utente dimensione: {self.k}")
+        print(f"✅ Book IDs nel modello: {len(book_ids)}")
+
+    def _sparse_to_tensor(self, sparse_user):
+        book_ids_tensor = torch.tensor(self.book_ids, dtype=torch.float32)
+        ratings_tensor = torch.zeros(self.k, dtype=torch.float32)
+
+        if isinstance(sparse_user, dict):
+            for book_id, rating in sparse_user.items():
+                if book_id in self.book_to_idx:
+                    idx = self.book_to_idx[book_id]
+                    ratings_tensor[idx] = float(rating)
+        elif isinstance(sparse_user, list):
+            for item in sparse_user:
+                book_id = item[0]
+                rating = item[1]
+                if book_id in self.book_to_idx:
+                    idx = self.book_to_idx[book_id]
+                    ratings_tensor[idx] = float(rating)
+
+        user_tensor = torch.stack([book_ids_tensor, ratings_tensor], dim=1)
+
+        return user_tensor.unsqueeze(0)
+
+    def _find_new_books(self, original, reconstructed, top_k=10):
+        original_ratings = original.squeeze()[..., 1].numpy()  # (k,)
+        predicted_ratings = reconstructed.squeeze()[..., 1].numpy()  # (k,)
+
+        recommendations = []
+
+        for idx, (orig_rating, pred_rating) in enumerate(zip(original_ratings, predicted_ratings)):
+            if orig_rating == 0 and pred_rating > 0:
+                book_id = self.book_ids[idx]  # Usa direttamente l'idx della lista book_ids
+                recommendations.append((book_id, float(pred_rating)))
+
+        recommendations.sort(key=lambda x: x[1], reverse=True)
+
+        return recommendations[:top_k]
 
     def get_recommendations(self, sparse_user, top_k=10):
         user_vector = self._sparse_to_tensor(sparse_user)
@@ -51,119 +89,189 @@ class BookRecommendationSystem:
         if recommendations:
             print(f"✅ Trovate {len(recommendations)} raccomandazioni")
         else:
-            print("⚠️  Nessuna nuova raccomandazione trovata")
+            print("⚠️ Nessuna nuova raccomandazione trovata")
 
         return recommendations
 
-    def _sparse_to_tensor(self, sparse_user):
-        embedded = self._embed_fast_single(sparse_user, target_len=self.k)
+    def get_book_info(self, book_id):
+        if self.df_books is None:
+            return {
+                'book_id': book_id,
+                'title': f'Book {book_id}',
+                'authors': 'Unknown',
+                'average_rating': 'N/A',
+                'ratings_count': 'N/A'
+            }
 
-        user_tensor = torch.zeros(1, self.k, 2)
-        for i, (book_id, rating) in enumerate(embedded):
-            if i >= self.k:
-                break
-            user_tensor[0, i, 0] = book_id
-            user_tensor[0, i, 1] = rating
+        book_info = self.df_books[self.df_books['goodreads_book_id'] == book_id]
 
-        return user_tensor
+        if len(book_info) > 0:
+            book = book_info.iloc[0]
+            return {
+                'book_id': book_id,
+                'title': book['title'],
+                'authors': book['authors'],
+                'average_rating': book['average_rating'],
+                'ratings_count': book['ratings_count'],
+                'publication_year': book.get('original_publication_year', 'N/A'),
+                'language': book.get('language_code', 'N/A')
+            }
+        else:
+            return {
+                'book_id': book_id,
+                'title': f'Book {book_id}',
+                'authors': 'Unknown',
+                'average_rating': 'N/A',
+                'ratings_count': 'N/A'
+            }
 
-    def _embed_fast_single(self, sparse_user, target_len=300):
-        embedding = [[book_id, rating] for book_id, rating, _ in sparse_user]
-        existing_ids = set(book_id for book_id, _ in embedding)
+    def display_recommendations(self, user_ratings, top_k=5, show_user_books=True):
+        print("🎯 RACCOMANDAZIONI FAE")
+        print("=" * 50)
 
-        cluster_counts = Counter([cluster for _, _, cluster in sparse_user])
-        total = len(sparse_user)
-        cluster_ratios = {cluster: count / total for cluster, count in cluster_counts.items()}
+        if isinstance(user_ratings, dict):
+            ratings_dict = user_ratings
+            rated_count = len(user_ratings)
+        elif isinstance(user_ratings, list):
+            ratings_dict = {item[0]: item[1] for item in user_ratings}
+            rated_count = len(user_ratings)
+        else:
+            ratings_dict = {}
+            rated_count = 0
 
-        sorted_clusters = sorted(cluster_ratios.items(), key=lambda x: x[1], reverse=True)
+        if show_user_books and ratings_dict:
+            print(f"\n📚 Libri che hai valutato ({rated_count} totali):")
+            displayed_books = 0
+            for book_id, rating in list(ratings_dict.items())[:5]:
+                book_info = self.get_book_info(book_id)
+                if book_info:
+                    print(f"   ⭐ {rating}/5 - {book_info['title']} ({book_info['authors']})")
+                    displayed_books += 1
 
-        remaining = target_len - len(embedding)
+            if rated_count > 5:
+                print(f"   ... e altri {rated_count - displayed_books} libri")
 
-        for cluster, ratio in sorted_clusters:
-            if remaining <= 0:
-                break
+        recommendations = self.get_recommendations(user_ratings, top_k)
 
-            n_to_sample = max(1, int(remaining * ratio))
-            cluster_books = [book_id for book_id in self.ids
-                             if book_id not in existing_ids]
-
-            if cluster_books:
-                sample_size = min(n_to_sample, len(cluster_books))
-                sampled = np.random.choice(cluster_books, size=sample_size, replace=False)
-
-                for book_id in sampled:
-                    if len(embedding) >= target_len:
-                        break
-                    embedding.append([int(book_id), 0])
-                    existing_ids.add(book_id)
-
-                remaining -= sample_size
-
-        while len(embedding) < target_len:
-            embedding.append([0, 0])
-
-        return embedding[:target_len]
-
-    def _find_new_books(self, original, reconstructed, top_k):
-        original_books = set()
-        for k in range(original.shape[1]):
-            book_id = int(original[0, k, 0].item())
-            if book_id != 0:
-                original_books.add(book_id)
-
-        new_books = []
-        for k in range(reconstructed.shape[1]):
-            book_id = int(reconstructed[0, k, 0].item())
-            rating = float(reconstructed[0, k, 1].item())
-
-            if (book_id != 0 and
-                    book_id not in original_books and
-                    1.0 <= rating <= 5.0):
-                new_books.append((book_id, rating))
-
-        unique_books = {}
-        for book_id, rating in new_books:
-            if book_id not in unique_books or rating > unique_books[book_id]:
-                unique_books[book_id] = rating
-
-        new_books_sorted = sorted(unique_books.items(), key=lambda x: x[1], reverse=True)
-        return new_books_sorted[:top_k]
-
-    def print_recommendations(self, recommendations, show_details=True):
         if not recommendations:
-            print("📚 Nessuna raccomandazione trovata")
+            print("\n❌ Impossibile generare raccomandazioni")
+            print("💡 Suggerimenti:")
+            print("   - Verifica che i libri valutati siano nel dataset")
+            print("   - Prova ad aggiungere più valutazioni")
             return
 
-        print("📚 RACCOMANDAZIONI PERSONALIZZATE:")
-        print("=" * 60)
+        print(f"\n🎁 Top {len(recommendations)} raccomandazioni per te:")
+        print("-" * 50)
 
-        for i, (book_id, rating) in enumerate(recommendations, 1):
-            if show_details and self.df_books is not None:
-                book_info = self.df_books[self.df_books['goodreads_book_id'] == book_id]
-                if not book_info.empty:
-                    title = book_info.iloc[0]['title']
-                    author = book_info.iloc[0]['authors']
-                    avg_rating = book_info.iloc[0].get('average_rating', 'N/A')
+        for i, (book_id, predicted_rating) in enumerate(recommendations, 1):
+            book_info = self.get_book_info(book_id)
+            print(f"\n{i}. 📖 {book_info['title']}")
+            print(f"   ✍️  {book_info['authors']}")
+            print(f"   🔮 Rating predetto: {predicted_rating:.2f}/5")
 
-                    print(f"{i:2d}. 📖 {title}")
-                    print(f"    👤 Autore: {author}")
-                    print(f"    ⭐ Rating predetto: {rating:.2f} | Media Goodreads: {avg_rating}")
-                    print(f"    🆔 Book ID: {book_id}")
-                else:
-                    print(f"{i:2d}. 🆔 Book ID: {book_id} | ⭐ Rating: {rating:.2f}")
-            else:
-                print(f"{i:2d}. 🆔 Book ID: {book_id} | ⭐ Rating predetto: {rating:.2f}")
-            print()
+            if book_info['average_rating'] != 'N/A':
+                print(f"   ⭐ Rating medio: {book_info['average_rating']:.2f}/5")
+            if book_info['ratings_count'] != 'N/A':
+                print(f"   👥 Valutazioni: {book_info['ratings_count']:,}")
+            if book_info.get('publication_year', 'N/A') != 'N/A':
+                try:
+                    year = int(float(book_info['publication_year']))
+                    print(f"   📅 Anno: {year}")
+                except:
+                    pass
+
+    def get_user_vector_info(self, sparse_user):
+        user_tensor = self._sparse_to_tensor(sparse_user)
+        ratings = user_tensor.squeeze()[..., 1].numpy()  # Estrae solo i rating
+
+        non_zero_count = np.count_nonzero(ratings)
+        sparsity = 1 - (non_zero_count / len(ratings))
+
+        if non_zero_count > 0:
+            non_zero_ratings = ratings[ratings > 0]
+            avg_rating = np.mean(non_zero_ratings)
+            rating_dist = Counter(non_zero_ratings.astype(int))
+        else:
+            avg_rating = 0
+            rating_dist = {}
+
+        stats = {
+            'total_books': len(ratings),
+            'rated_books': non_zero_count,
+            'sparsity': sparsity,
+            'average_rating': avg_rating,
+            'rating_distribution': dict(rating_dist)
+        }
+
+        return stats
+
+    def batch_recommendations(self, users_dict, top_k=10, verbose=True):
+        batch_results = {}
+        total_users = len(users_dict)
+
+        for i, (user_id, sparse_user) in enumerate(users_dict.items(), 1):
+            if verbose and i % 100 == 0:
+                print(f"📊 Processati {i}/{total_users} utenti...")
+
+            recommendations = self.get_recommendations(sparse_user, top_k)
+            batch_results[user_id] = recommendations
+
+        if verbose:
+            print(f"✅ Completate raccomandazioni per {total_users} utenti")
+
+        return batch_results
+
+    def evaluate_recommendations(self, test_users_dict, top_k=10):
+        total_users = len(test_users_dict)
+        successful_recs = 0
+        total_recommendations = 0
+
+        for user_id, sparse_user in test_users_dict.items():
+            recommendations = self.get_recommendations(sparse_user, top_k)
+
+            if recommendations:
+                successful_recs += 1
+                total_recommendations += len(recommendations)
+
+        coverage = successful_recs / total_users if total_users > 0 else 0
+        avg_recs_per_user = total_recommendations / total_users if total_users > 0 else 0
+
+        metrics = {
+            'user_coverage': coverage,
+            'avg_recommendations_per_user': avg_recs_per_user,
+            'total_users_evaluated': total_users,
+            'users_with_recommendations': successful_recs
+        }
+
+        print("📊 METRICHE DI VALUTAZIONE")
+        print("=" * 30)
+        print(f"👥 Utenti valutati: {metrics['total_users_evaluated']:,}")
+        print(f"✅ Utenti con raccomandazioni: {metrics['users_with_recommendations']:,}")
+        print(f"📈 Copertura utenti: {metrics['user_coverage']:.2%}")
+        print(f"📊 Raccomandazioni medie per utente: {metrics['avg_recommendations_per_user']:.1f}")
+
+        return metrics
 
 
-def create_recommendation_system(model_path='best_model.pth', ids=None, k=300, df_books=None):
-    if ids is None:
-        ids = list(range(1, 10001))
-        print("⚠️  Usando book_ids di default. Sostituisci con gli IDs reali del training!")
+def load_recommendation_system(model_path, book_ids, books_csv_path=None):
+    print("🚀 Caricamento sistema di raccomandazione...")
 
-    return BookRecommendationSystem(
+    k = len(book_ids)
+
+    df_books = None
+    if books_csv_path:
+        try:
+            df_books = pd.read_csv(books_csv_path)
+            print(f"📚 Caricato dataset libri: {len(df_books):,} libri")
+        except Exception as e:
+            print(f"⚠️ Errore nel caricamento {books_csv_path}: {e}")
+
+    system = BookRecommendationSystem(
         model_path=model_path,
-        ids=ids,
+        book_ids=book_ids,
         k=k,
         df_books=df_books
     )
+
+    print("✅ Sistema di raccomandazione pronto!")
+    return system
