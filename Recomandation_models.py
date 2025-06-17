@@ -202,7 +202,7 @@ class Spatial_F_AE(nn.Module):
         return final
     
 class Spatial_LSTM_AE(nn.Module):
-    def __init__(self,input_size=1, hidden_size=64, latent_size=32, num_layers=10):
+    def __init__(self,input_size=1000, hidden_size=64, latent_size=32, num_layers=10):
         super(Spatial_LSTM_AE, self).__init__()
         self.encoder_lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size, num_layers=num_layers, batch_first=True)
         self.fc_enc = nn.Linear(hidden_size, latent_size)
@@ -217,14 +217,14 @@ class Spatial_LSTM_AE(nn.Module):
         z = self.fc_enc(h_last)
         h_dec = self.fc_dec(z)
         h_dec = h_dec.unsqueeze(0).repeat(self.decoder_lstm.num_layers, 1, 1)
-        c_dec = self.fc_dec(z)       # fc_c è un altro Linear
+        c_dec = self.fc_dec(z)       
         c_dec = c_dec.unsqueeze(0).repeat(self.decoder_lstm.num_layers, 1, 1)
-        decoder_input = torch.zeros(batch_size, seq_len, 1).to(x.device)
+        decoder_input = torch.zeros(batch_size, seq_len, self.encoder_lstm.input_size).to(x.device)
         decoder_output, _ = self.decoder_lstm(decoder_input, (h_dec, c_dec))
         reconstructed = self.output_layer(decoder_output)  
         return reconstructed
 
-def train_spatial(model, dataloader, criterion, optimizer, num_epochs, best_loss=float('inf')):
+def train_spatial(model, dataloader, criterion, optimizer, num_epochs, scheduler=None, best_loss=float('inf')):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     losses = []
     model.to(device)
@@ -232,12 +232,15 @@ def train_spatial(model, dataloader, criterion, optimizer, num_epochs, best_loss
         model.train()
         running_loss = 0.0
         for i, batch in enumerate(dataloader):
-            batch = batch.to(device)
-            recon, _ = model(batch)
-            loss = criterion(recon, batch)
+            inputs = batch[0].to(device)
+            inputs = inputs.unsqueeze(1)
+            recon= model(inputs)
+            loss = criterion(recon, inputs)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            if scheduler is not None:
+                scheduler.step(loss.item())
             running_loss += loss.item()
         losses.append(running_loss / (i + 1))
         if running_loss < best_loss:
