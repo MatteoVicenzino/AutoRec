@@ -13,7 +13,7 @@ PREPROCESSING:
 First, we need to prepare the dataset by removing missing values (NaNs) and merging the necessary information into a single file.                     
 This preprocessing is handled in the notebook DataPreparation.ipynb, which generates the file books_autorec.csv.                
 The next step is the creation of the user-item matrix:                      
-1- Data-Filtering: To speed up execution and demonstrate the model’s functionality, we selected the top 2,000 books ranked by number of ratings, and the top 50,000 users ranked by the number of ratings they gave to these                       selected books. This user selection strategy aims to reduce the sparsity of the resulting user-item matrix. This process generates filter_users, a dict containing user_id as keys and book_id and    
+1- Data-Filtering: To speed up execution and demonstrate the model’s functionality, we selected the top 2,000 books ranked by number of ratings, and the top 50,000 users ranked by the number of ratings they gave to these                       selected books. This user selection strategy aims to reduce the sparsity of the resulting user-item matrix. This process generates filter_users, a python dictionary containing user_id as keys and book_id and    
                    ratings.         
 2- Mapping: This part builds two dictionaries: one that maps each book_id to its corresponding column index in the user-item matrix, and another that performs the reverse mapping.  
 3- Matrix: Then, we finally build the matrix and store it in a pd.dataframe, calling it df_input_data.    
