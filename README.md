@@ -29,5 +29,7 @@ The quality of the clustering is evaluated by inspecting the most frequent tags 
 From each cluster, a small number of representative books (champions) is selected and presented to the user. The champions are selected as the most popular in the cluster. Based on the user's preferences, we construct a personalized user vector, marking liked champions with a 1. This enables the model to generate recommendations even in the absence of historical user data.    
 
 EVALUATION:   
-
-
+The model is evaluated using Recall@K, a metric commonly used in recommender systems.       
+For each user, we simulate a realistic recommendation scenario by removing a portion of the items they liked (setting those entries in the user vector to 0).     
+The modified user vector is then passed through the model to generate recommendations.      
+We measure performance by calculating the proportion of the removed items that appear in the top-K recommendations produced by the model. This process is repeated for all users, and we compute the average recall to obtain an overall evaluation of the model's ability to recover relevant items.   
