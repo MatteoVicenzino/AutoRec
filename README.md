@@ -1,3 +1,16 @@
-AUTORECOMMANDETION SYSTEM USING AUTOENCODER
-We used as dataset https://www.kaggle.com/datasets/alexanderfrosati/goodbooks-10k-updated?resource=download
-IDEA:
+RECOMMENDATION SYSTEM USING AUTOENCODER                               
+We used as a dataset https://www.kaggle.com/datasets/alexanderfrosati/goodbooks-10k-updated?resource=download             
+           
+IDEA:            
+The process is based on two main assumptions:                    
+1-A user's preferences are highly correlated and structured.                
+2-An autoencoder can effectively learn these underlying associations.                            
+Each user is represented by a binary vector whose length equals the number of items, where a 1 indicates interest in a specific item, and 0 otherwise.                
+The autoencoder is trained to reconstruct these vectors, implicitly learning the spatial (latent) relationships between items.                              
+If training is successful, the reconstruction will closely match the original input, with discrepancies occurring only in a few positions. These differing positions can then be interpreted as potential new items that the  user might be interested in.           
+                 
+PREPROCESSING:                             
+First, we need to prepare the dataset by removing missing values (NaNs) and merging the necessary information into a single file.                     
+This preprocessing is handled in the notebook DataPreparation.ipynb, which generates the file books_autorec.csv.                
+The next step is the creation of the user-item matrix:                      
+1-data-filtering: To speed up execution and demonstrate the model’s functionality, we selected the top 2,000 books ranked by number of ratings, and the top 50,000 users ranked by the number of ratings they gave to these                         selected books. This user selection strategy aims to reduce the sparsity of the resulting user-item matrix.        
