@@ -34,7 +34,7 @@ For each user, we simulate a realistic recommendation scenario by removing a por
 The modified user vector is then passed through the model to generate recommendations.      
 We measure performance by calculating the proportion of the removed items that appear in the top-K recommendations produced by the model. This process is repeated for all users, and we compute the average recall to obtain an overall evaluation of the model's ability to recover relevant items.   
 
-CONCLUSION:
+CONCLUSION:     
 The model demonstrates good performance based on the Recall@K metric, providing accurate and meaningful recommendations. Its inference is also computationally efficient, since it only requires passing user vectors through the network and selecting the top-K items from the reconstructed output.      
 However, there are several limitations to consider:     
 1-Large Datasets: When the dataset grows significantly, the user-item matrix becomes harder to manage due to its size, leading to increased memory usage and slower training and inference.       
