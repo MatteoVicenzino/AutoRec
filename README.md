@@ -28,5 +28,6 @@ To process the tags, we use TfidfVectorizer from sklearn.feature_extraction.text
 The quality of the clustering is evaluated by inspecting the most frequent tags within each cluster to verify coherence.      
 From each cluster, a small number of representative books (champions) is selected and presented to the user. The champions are selected as the most popular in the cluster. Based on the user's preferences, we construct a personalized user vector, marking liked champions with a 1. This enables the model to generate recommendations even in the absence of historical user data.    
 
+EVALUATION:   
 
 
