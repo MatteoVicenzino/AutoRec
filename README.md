@@ -1,5 +1,5 @@
 RECOMMENDATION SYSTEM USING AUTOENCODER                               
-We used as a dataset https://www.kaggle.com/datasets/alexanderfrosati/goodbooks-10k-updated?resource=download             
+Dataset: https://www.kaggle.com/datasets/alexanderfrosati/goodbooks-10k-updated?resource=download             
            
 IDEA:            
 The process is based on two main assumptions:                    
