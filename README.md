@@ -19,4 +19,4 @@ The next step is the creation of the user-item matrix:
 3- Matrix: Then, we finally build the matrix and store it in a pd.dataframe, calling it df_input_data.    
        
 MODEL:     
-The model is called Spatial_F_AE and has a deep fully connected neural network as encoder and decoder    
+The model, called Spatial_F_AE, is a deep fully connected autoencoder, and it is trained using the Mean Squared Error (MSE) loss function. The model takes as input a binary user vector, where each position contains either a 1 or a 0, indicating whether the user liked a specific item. The output is a reconstructed vector with values between 0 and 1. Since a sigmoid activation function is used at the output layer, these values can be interpreted as probabilities that the user would like each corresponding item.   
