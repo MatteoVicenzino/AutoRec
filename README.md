@@ -38,5 +38,5 @@ We measure performance by calculating the proportion of the removed items that a
 CONCLUSION:
 The model demonstrates good performance based on the Recall@K metric, providing accurate and meaningful recommendations. Its inference is also computationally efficient, since it only requires passing user vectors through the network and selecting the top-K items from the reconstructed output.      
 However, there are several limitations to consider:     
-1-Large Datasets: When the dataset grows significantly, the user-item matrix becomes harder to manage due to its size, leading to increased memory usage and slower training and inference.
+1-Large Datasets: When the dataset grows significantly, the user-item matrix becomes harder to manage due to its size, leading to increased memory usage and slower training and inference.       
 2-Scalability Issues: If adding users is manageable, as new users can be represented by a binary preference vector without retraining the model. Adding Items presents a major limitation. Since the model architecture is tied to the dimensionality of the user vectors (i.e., the number of items), adding new items requires a complete retraining of the model. Otherwise, the new vectors would no longer be compatible with the existing model weights.
